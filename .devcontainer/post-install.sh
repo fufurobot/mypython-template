@@ -27,4 +27,7 @@ curl -LsS "https://micro.mamba.pm/api/micromamba/${micromamba_platform}/latest" 
   | tar -xj -C "$temp_dir" bin/micromamba
 install -m 0755 "$temp_dir/bin/micromamba" "$install_dir/micromamba"
 
-printf 'Installed uv and micromamba in %s\n' "$install_dir"
+curl -fsSL https://bun.sh/install \
+  | env BUN_INSTALL="$HOME/.local" bash
+
+printf 'Installed uv, micromamba, and Bun in %s\n' "$install_dir"

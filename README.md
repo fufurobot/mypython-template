@@ -13,4 +13,5 @@
 - compatiable with both uv and micromamba
 - auto devcontainer that show respect to python version
 - requirements.txt is the final arbiater of truth; others are always generated after codespace starts.
+- bun is installed to execute npm tools by bunx
 
