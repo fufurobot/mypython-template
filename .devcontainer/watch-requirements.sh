@@ -17,7 +17,7 @@ generate_manifests() {
   python_spec="python${python_constraint}"
 
   mkdir "$temp_dir/project"
-  local uv_init_args=(init --bare --name "$project_name")
+  local uv_init_args=(init --name "$project_name")
   if [[ -n "$python_constraint" ]]; then
     uv_init_args+=(--python "$python_constraint")
   fi
