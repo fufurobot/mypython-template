@@ -8,10 +8,10 @@
 
 [![Open in Codespaces (JupyterLab)](https://github.com/codespaces/badge.svg)](https://codespaces.new/fufurobot/mypython-template?quickstart=1&editor=jupyter)
 
-# features 
+# features
 
-- compatiable with both uv and micromamba
+- compatible with both uv and micromamba
 - auto devcontainer that show respect to python version
-- requirements.txt is the final arbiater of truth; others are always generated after codespace starts.
+- set `DEPENDENCY_MANAGER=uv` or `DEPENDENCY_MANAGER=micromamba` in `.env` to select the project dependency manager. If unset, projects with a root `notebooks/` directory use micromamba and other projects use uv.
+- the selected manager syncs its root manifest directly into `.venv`; if that manifest is missing, it is initialized from `requirements.txt`. The other manager's manifest is generated through a temporary project.
 - bun is installed to execute npm tools by bunx
-
