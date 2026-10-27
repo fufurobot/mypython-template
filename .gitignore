@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# generated files
+uv.lock
+#pyproject.toml
+#environment.yml
