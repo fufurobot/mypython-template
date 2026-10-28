@@ -7,8 +7,8 @@
 #
 # Build:
 #   docker build -f .devcontainer/Dockerfile -t mypython-template .
-# The release workflow builds it for both amd64 and arm64 and pushes it to the
-# GitHub Container Registry.
+# The release workflow builds it for linux/amd64 and pushes it to the GitHub
+# Container Registry.
 
 FROM ghcr.io/bartventer/devcontainer-images/base-archlinux:latest
 

@@ -244,7 +244,8 @@ gated on a tag, so the workflow can be rehearsed without creating one.
 image: it starts from the same base image as `devcontainer.json`, runs
 `post-install.sh` so uv, pdm, micromamba, and bun are already installed, and
 fails the build if any of them is not runnable. It is pushed to
-`ghcr.io/fufurobot/mypython-template` for `linux/amd64` and `linux/arm64`.
+`ghcr.io/fufurobot/mypython-template` for `linux/amd64`, the only platform the
+base image is published for.
 
 The workflow authenticates with the built-in `GITHUB_TOKEN`, whose
 `packages: write` permission comes from the job, so no token has to be stored
