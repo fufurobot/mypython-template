@@ -8,6 +8,8 @@ dev_requirements_file="$repo_root/requirements-dev.txt"
 pyproject_file="$repo_root/pyproject.toml"
 environment_file="$repo_root/environment.yml"
 env_file="$repo_root/.env"
+readme_file="$repo_root/README.md"
+badges_script="$repo_root/.devcontainer/readme-badges.sh"
 watcher_log="${TMPDIR:-/tmp}/stupidinfer-dependencies-watcher.log"
 lock_file="${TMPDIR:-/tmp}/stupidinfer-dependencies-watcher.lock"
 
@@ -253,6 +255,16 @@ sync_micromamba_project() (
   fi
 )
 
+# update_badges: refreshes the generated badges of the README. A README without
+# the badge markers, or a missing injector, is not an error.
+update_badges() {
+  if [[ ! -f "$badges_script" ]]; then
+    return 0
+  fi
+  bash "$badges_script" || printf 'Badge injection failed\n' >&2
+  return 0
+}
+
 sync_project() {
   local manager
   manager="$(load_dependency_manager)"
@@ -263,6 +275,7 @@ sync_project() {
   else
     sync_micromamba_project
   fi
+  update_badges
 }
 
 input_hash() {
@@ -271,7 +284,7 @@ input_hash() {
   {
     printf '%s\n' "$manager"
     for file in "$env_file" "$pyproject_file" "$environment_file" \
-      "$requirements_file" "$dev_requirements_file"; do
+      "$requirements_file" "$dev_requirements_file" "$readme_file"; do
       [[ ! -f "$file" ]] || sha256sum "$file"
     done
   } | sha256sum | awk '{print $1}'

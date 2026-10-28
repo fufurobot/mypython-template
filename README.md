@@ -1,5 +1,11 @@
 # my python project template
 
+<!-- BEGIN BADGE INJECTION -->
+
+[![github](https://img.shields.io/badge/github-fufurobot%2Fmypython--template-181717?logo=github&logoColor=white)](https://github.com/fufurobot/mypython-template) [![python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/) [![manager](https://img.shields.io/badge/manager-uv-dea584?logo=uv&logoColor=white)](https://docs.astral.sh/uv/) [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/fufurobot/mypython-template/main) [![codespaces](https://img.shields.io/badge/codespaces-open-181717?logo=github&logoColor=white)](https://codespaces.new/fufurobot/mypython-template?quickstart=1) [![license](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE) [![dev dependencies](https://img.shields.io/badge/dev_dependencies-1-blue)](requirements-dev.txt)
+
+<!-- END BADGE INJECTION -->
+
 ## Open in vscode
 
 [![Open in Codespaces (VS Code)](https://github.com/codespaces/badge.svg)](https://codespaces.new/fufurobot/mypython-template?quickstart=1&editor=web)
