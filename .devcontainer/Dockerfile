@@ -21,9 +21,14 @@ RUN pacman -Sy --noconfirm --needed curl tar bzip2 \
  && pacman -Scc --noconfirm
 
 # post-install.sh resolves $HOME, so it runs as the devcontainer user, with the
-# same PATH that devcontainer.json gives the container.
+# same PATH that devcontainer.json gives the container. The installers write
+# below ~/.local/share and ~/.bun as well as into ~/.local/bin, so the home
+# directory has to belong to the user: creating only ~/.local/bin left the rest
+# owned by root, and pdm then failed with
+# "Permission denied: '/home/vscode/.local/share'".
 COPY --chown=vscode:vscode .devcontainer/post-install.sh /tmp/post-install.sh
-RUN install -d -o vscode -g vscode /home/vscode/.local/bin \
+RUN chown -R vscode:vscode /home/vscode \
+ && install -d -o vscode -g vscode /home/vscode/.local/bin \
  && su vscode -s /bin/bash -c \
     'PATH="/home/vscode/.local/bin:$PATH" bash /tmp/post-install.sh' \
  && rm -f /tmp/post-install.sh
