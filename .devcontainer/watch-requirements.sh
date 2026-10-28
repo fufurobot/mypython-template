@@ -98,6 +98,28 @@ read_python_constraint() {
   ' "$requirements_file" | tr -d '[:space:]'
 }
 
+# in_binder: whether this workspace runs on a Binder instance. Binder sets
+# these variables for the repository that it built, and nothing else does.
+in_binder() {
+  [[ -n "${BINDER_LAUNCH_HOST:-}" || -n "${BINDER_REPO_URL:-}" \
+    || -n "${BINDER_REF_URL:-}" || -n "${BINDER_SERVICE_HOST:-}" ]]
+}
+
+# prepare_binder_workspace: Binder provides its environment through conda, so a
+# workspace built there is treated like a notebook project: notebooks/ makes the
+# dependency manager resolve to micromamba, which then reuses the Binder
+# environment instead of creating a second one.
+prepare_binder_workspace() {
+  if ! in_binder; then
+    return 0
+  fi
+  if [[ ! -d "$repo_root/notebooks" ]]; then
+    mkdir -p "$repo_root/notebooks"
+    printf 'Binder workspace detected: created %s\n' "$repo_root/notebooks"
+  fi
+  printf 'Binder workspace detected: using the conda environment provided by Binder\n'
+}
+
 load_dependency_manager() {
   local manager="" line value
 
@@ -119,6 +141,11 @@ load_dependency_manager() {
 
   manager="${manager:-${DEPENDENCY_MANAGER:-}}"
   manager="${manager,,}"
+
+  # Binder only provides a conda environment, so nothing can replace it there.
+  if in_binder; then
+    manager="micromamba"
+  fi
   case "$manager" in
     uv)
       printf 'uv\n'
@@ -210,23 +237,40 @@ with open(path, "w", encoding="utf-8") as environment:
 PY
 }
 
+# micromamba_prefix: the environment to install into. On Binder that is the
+# environment Binder built, which the CONDA_PREFIX and CONDA_DEFAULT_ENV
+# variables point at, so no environment of our own is created there.
+micromamba_prefix() {
+  if in_binder && [[ -n "${CONDA_PREFIX:-}" ]]; then
+    printf '%s\n' "$CONDA_PREFIX"
+  else
+    printf '%s\n' "$repo_root/.venv"
+  fi
+}
+
 sync_micromamba_project() (
-  local group file temp_dir
+  local group file temp_dir prefix
   local -a group_files=()
   export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-$HOME/.cache/mamba}"
 
   require_requirements
-  if [[ ! -f "$environment_file" ]]; then
-    initialize_environment
-  fi
+  prefix="$(micromamba_prefix)"
 
-  if [[ -f "$repo_root/.venv/conda-meta/history" ]]; then
-    micromamba env update --yes --prefix "$repo_root/.venv" --file "$environment_file" --prune
-  elif [[ -e "$repo_root/.venv" ]]; then
-    printf 'Cannot use %s: it exists but is not a micromamba environment\n' "$repo_root/.venv" >&2
-    return 1
+  if [[ "$prefix" == "$repo_root/.venv" ]]; then
+    if [[ ! -f "$environment_file" ]]; then
+      initialize_environment
+    fi
+
+    if [[ -f "$repo_root/.venv/conda-meta/history" ]]; then
+      micromamba env update --yes --prefix "$repo_root/.venv" --file "$environment_file" --prune
+    elif [[ -e "$repo_root/.venv" ]]; then
+      printf 'Cannot use %s: it exists but is not a micromamba environment\n' "$repo_root/.venv" >&2
+      return 1
+    else
+      micromamba create --yes --prefix "$repo_root/.venv" --file "$environment_file"
+    fi
   else
-    micromamba create --yes --prefix "$repo_root/.venv" --file "$environment_file"
+    printf 'Installing requirements into the Binder environment at %s\n' "$prefix"
   fi
 
   # Groups are not a micromamba concept, so each one is pip-installed into the
@@ -240,17 +284,17 @@ sync_micromamba_project() (
   done < <(print_groups "$requirements_file")
 
   if [[ -s "$temp_dir/requirements.txt" ]]; then
-    micromamba run --prefix "$repo_root/.venv" python -m pip install \
+    micromamba run --prefix "$prefix" python -m pip install \
       --disable-pip-version-check -r "$temp_dir/requirements.txt"
   fi
   for file in ${group_files[@]+"${group_files[@]}"}; do
     if [[ -s "$file" ]]; then
-      micromamba run --prefix "$repo_root/.venv" python -m pip install \
+      micromamba run --prefix "$prefix" python -m pip install \
         --disable-pip-version-check -r "$file"
     fi
   done
   if [[ -f "$dev_requirements_file" ]]; then
-    micromamba run --prefix "$repo_root/.venv" python -m pip install \
+    micromamba run --prefix "$prefix" python -m pip install \
       --disable-pip-version-check -r "$dev_requirements_file"
   fi
 )
@@ -267,6 +311,7 @@ update_badges() {
 
 sync_project() {
   local manager
+  prepare_binder_workspace
   manager="$(load_dependency_manager)"
   printf 'Using %s for %s\n' "$manager" "$repo_root"
 
