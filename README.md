@@ -233,10 +233,13 @@ and the other three fan out from it:
 | `build` | wheel and sdist, kept as the `dist` artifact | — |
 | `publish` | the package on TestPyPI | `id-token: write` (OIDC) |
 | `image` | the devcontainer image, on the GitHub Container Registry | `packages: write` |
-| `release` | a GitHub release with the artifacts, on a `v*` tag | `contents: write` |
+| `release` | a GitHub release with the artifacts | `contents: write` |
 
-A `workflow_dispatch` run does everything except the GitHub release, which is
-gated on a tag, so the workflow can be rehearsed without creating one.
+Every run does all four, whether it was triggered by a `v*` tag or by hand.
+A tag push names the release after the tag; any other run names it after the
+version the build published, `v` plus that pre-release, so the artifacts of a
+rehearsal are kept rather than discarded. Re-running a version replaces its
+assets instead of failing.
 
 ## versions and collisions
 
