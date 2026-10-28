@@ -60,10 +60,17 @@ install_bun() {
     | env BUN_INSTALL="$HOME/.local" bash
 }
 
+# PDM ships as a standalone binary, and its installer links it into the
+# directory given by -p, which the devcontainer already has on PATH.
+install_pdm() {
+  curl -sSL https://pdm-project.org/install.sh | bash -s -- -p "$install_dir"
+}
+
 # name:install function:fallback locations
 tools=(
   "uv:install_uv:$install_dir/uv"
   "micromamba:install_micromamba:$install_dir/micromamba"
+  "pdm:install_pdm:$install_dir/pdm"
   "bun:install_bun:$HOME/.bun/bin/bun"
 )
 

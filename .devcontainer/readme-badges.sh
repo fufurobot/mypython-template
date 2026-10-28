@@ -141,6 +141,8 @@ if python_constraint:
 
 if manager == "uv":
     badges.append(shields("manager", "uv", "dea584", "https://docs.astral.sh/uv/", "uv"))
+elif manager == "pdm":
+    badges.append(shields("manager", "pdm", "9575cd", "https://pdm-project.org/", "pdm"))
 elif manager == "micromamba":
     badges.append(
         shields("manager", "micromamba", "6db33f", "https://mamba.readthedocs.io/")

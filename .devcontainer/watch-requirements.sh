@@ -154,6 +154,9 @@ load_dependency_manager() {
     mamba | micromamba)
       printf 'micromamba\n'
       ;;
+    pdm)
+      printf 'pdm\n'
+      ;;
     "")
       if [[ -d "$repo_root/notebooks" ]]; then
         printf 'micromamba\n'
@@ -162,7 +165,7 @@ load_dependency_manager() {
       fi
       ;;
     *)
-      printf 'Unsupported DEPENDENCY_MANAGER value: %s (use uv or micromamba)\n' "$manager" >&2
+      printf 'Unsupported DEPENDENCY_MANAGER value: %s (use uv, pdm, or micromamba)\n' "$manager" >&2
       return 1
       ;;
   esac
@@ -262,6 +265,68 @@ link_binder_environment() {
   printf 'Linked %s -> %s\n' "$binder_environment_file" "$link_target"
 }
 
+# read_requirements_of FILE: the requirements of FILE as arguments, one per
+# line. pdm takes the requirements as arguments rather than as a file.
+read_requirements_of() {
+  local file="$1" requirement
+  if [[ ! -s "$file" ]]; then
+    return 0
+  fi
+  while IFS= read -r requirement; do
+    [[ -n "$requirement" ]] || continue
+    printf '%s\0' "$requirement"
+  done < "$file"
+}
+
+# pdm_add GROUP FILE: adds the requirements of FILE to the dependency group
+# GROUP, or to the project dependencies for an empty GROUP. `-dG` is what puts
+# a group in [dependency-groups] rather than in optional-dependencies.
+pdm_add() {
+  local group="$1" file="$2"
+  local -a requirements=()
+  local -a group_args=()
+  mapfile -d '' -t requirements < <(read_requirements_of "$file")
+  ((${#requirements[@]})) || return 0
+
+  if [[ -n "$group" ]]; then
+    group_args=(-dG "$group")
+  fi
+  pdm add --project "$repo_root" --no-sync ${group_args[@]+"${group_args[@]}"} "${requirements[@]}"
+}
+
+# pdm_add_dev FILE: adds the requirements of FILE to the dev group.
+pdm_add_dev() {
+  local file="$1"
+  local -a requirements=()
+  mapfile -d '' -t requirements < <(read_requirements_of "$file")
+  ((${#requirements[@]})) || return 0
+  pdm add --project "$repo_root" --no-sync --dev "${requirements[@]}"
+}
+
+sync_pdm_project() (
+  local temp_dir group
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$temp_dir"' EXIT
+
+  require_requirements
+  if [[ ! -f "$pyproject_file" ]]; then
+    initialize_uv_project
+  fi
+
+  print_group "$requirements_file" "" > "$temp_dir/requirements.txt"
+  pdm_add "" "$temp_dir/requirements.txt"
+  while IFS= read -r group; do
+    print_group "$requirements_file" "$group" > "$temp_dir/$group.txt"
+    pdm_add "$group" "$temp_dir/$group.txt"
+  done < <(print_groups "$requirements_file")
+
+  if [[ -f "$dev_requirements_file" ]]; then
+    pdm_add_dev "$dev_requirements_file"
+  fi
+
+  pdm install --project "$repo_root"
+)
+
 # micromamba_prefix: the environment to install into. On Binder that is the
 # environment Binder built, which the CONDA_PREFIX and CONDA_DEFAULT_ENV
 # variables point at, so no environment of our own is created there.
@@ -341,11 +406,17 @@ sync_project() {
   manager="$(load_dependency_manager)"
   printf 'Using %s for %s\n' "$manager" "$repo_root"
 
-  if [[ "$manager" == "uv" ]]; then
-    sync_uv_project
-  else
-    sync_micromamba_project
-  fi
+  case "$manager" in
+    uv)
+      sync_uv_project
+      ;;
+    pdm)
+      sync_pdm_project
+      ;;
+    *)
+      sync_micromamba_project
+      ;;
+  esac
   update_badges
 }
 
