@@ -47,12 +47,13 @@ RUN su "$USERNAME" -s /bin/bash -c \
       'PATH="/home/vscode/.local/bin:$PATH" bash /tmp/post-install.sh' \
  && rm -f /tmp/post-install.sh
 
-# The tools installed above live in /home/vscode/.local/bin, and mise keeps its
-# data, config, and cache in /mise, outside the home directory, so what mise
-# installs survives a mounted ~. MISE_YES keeps mise from asking for
-# confirmation when a tool is first fetched. This has to come before the check
-# below, which resolves the same PATH the container will have.
-ENV PATH="/home/vscode/.local/bin:/mise/shims:${PATH}" \
+# The tools installed above live in /home/vscode/.local/bin; the base image
+# already has /mise/shims on PATH, so only that directory is prepended here.
+# mise keeps its data, config, and cache in /mise, outside the home directory,
+# so what mise installs survives a mounted ~, and MISE_YES keeps it from asking
+# for confirmation. This precedes the check below, which resolves the same PATH
+# the container will have.
+ENV PATH="/home/vscode/.local/bin:${PATH}" \
     MISE_DATA_DIR="/mise" \
     MISE_CONFIG_DIR="/mise" \
     MISE_CACHE_DIR="/mise/cache" \
