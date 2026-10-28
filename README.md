@@ -59,3 +59,20 @@ files, then writes the repository, Python, manager, Codespaces, Binder, CI,
 license, and dependency badges. Leave the markers in place: without both of
 them the README is left alone, and everything outside them is preserved.
 
+# Binder
+
+`binder/environment.yml` configures [Binder](https://mybinder.org): repo2docker
+builds the project with its Miniconda image and pins Python 3.12, a version it
+ships a lock file for. Keep its pip list in sync with `requirements.txt` and
+`requirements-dev.txt`, as repo2docker runs `mamba env update` on that file
+directly and relative `-r` references are unreliable there.
+
+A Binder workspace is recognised by the `BINDER_*` variables that Binder sets.
+In one, the dependency manager is always micromamba: a root `notebooks/`
+directory is created so that the default resolution agrees, and the
+requirements are installed into the conda environment that Binder already
+built, instead of into a project `.venv`. `DEPENDENCY_MANAGER` cannot override
+this, because uv cannot manage a conda environment.
+
+Note that `notebooks/` is tracked once created, so a Binder visit can leave an
+untracked directory behind in a checkout.
