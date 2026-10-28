@@ -16,10 +16,13 @@ FROM ghcr.io/jdx/mise:debian
 USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# The base image is slim, so the packages the installers need come first.
+# The image is slim, so the tools post-install.sh shells out to are installed
+# explicitly: curl and bzip2 download and unpack micromamba, and bun's installer
+# stops with "error: unzip is required" without unzip. sudo is there so the
+# container can install packages the way the devcontainer spec expects.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl git tar bzip2 xz-utils sudo \
+      ca-certificates curl git tar bzip2 unzip sudo \
  && rm -rf /var/lib/apt/lists/*
 
 # A devcontainer runs as a non-root user, and sudo keeps it able to install
