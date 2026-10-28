@@ -65,3 +65,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          # Publish API attestations are signed through Sigstore's Rekor log,
+          # which has answered 502 to this repository's runners; publishing
+          # does not depend on them, so they are off until Rekor is reliable.
+          attestations: false
