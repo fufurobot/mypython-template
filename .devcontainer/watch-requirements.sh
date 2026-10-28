@@ -7,6 +7,7 @@ requirements_file="$repo_root/requirements.txt"
 dev_requirements_file="$repo_root/requirements-dev.txt"
 pyproject_file="$repo_root/pyproject.toml"
 environment_file="$repo_root/environment.yml"
+binder_environment_file="$repo_root/binder/environment.yml"
 env_file="$repo_root/.env"
 readme_file="$repo_root/README.md"
 badges_script="$repo_root/.devcontainer/readme-badges.sh"
@@ -237,6 +238,30 @@ with open(path, "w", encoding="utf-8") as environment:
 PY
 }
 
+# link_binder_environment: Binder reads binder/environment.yml, so that file is
+# a symlink to the generated root one. A symlink that already points at the
+# right file is left untouched; a regular file is never removed, since it may
+# hold edits.
+link_binder_environment() {
+  local binder_dir link_target
+  binder_dir="$(dirname "$binder_environment_file")"
+  link_target="$(realpath --relative-to="$binder_dir" "$environment_file")"
+
+  if [[ -L "$binder_environment_file" ]]; then
+    if [[ "$(readlink "$binder_environment_file")" == "$link_target" ]]; then
+      return 0
+    fi
+    rm -f "$binder_environment_file"
+  elif [[ -e "$binder_environment_file" ]]; then
+    printf 'Skipping the Binder symlink: %s is a regular file\n' "$binder_environment_file" >&2
+    return 0
+  fi
+
+  mkdir -p "$binder_dir"
+  ln -s "$link_target" "$binder_environment_file"
+  printf 'Linked %s -> %s\n' "$binder_environment_file" "$link_target"
+}
+
 # micromamba_prefix: the environment to install into. On Binder that is the
 # environment Binder built, which the CONDA_PREFIX and CONDA_DEFAULT_ENV
 # variables point at, so no environment of our own is created there.
@@ -260,6 +285,7 @@ sync_micromamba_project() (
     if [[ ! -f "$environment_file" ]]; then
       initialize_environment
     fi
+    link_binder_environment
 
     if [[ -f "$repo_root/.venv/conda-meta/history" ]]; then
       micromamba env update --yes --prefix "$repo_root/.venv" --file "$environment_file" --prune
