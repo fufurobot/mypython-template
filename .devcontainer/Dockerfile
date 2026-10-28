@@ -47,20 +47,21 @@ RUN su "$USERNAME" -s /bin/bash -c \
       'PATH="/home/vscode/.local/bin:$PATH" bash /tmp/post-install.sh' \
  && rm -f /tmp/post-install.sh
 
-# Fail the build rather than ship an image whose tools do not run.
-RUN su "$USERNAME" -s /bin/bash -c \
-      'for tool in mise uv pdm micromamba bun; do \
-         command -v "$tool" >/dev/null || { echo "$tool is missing" >&2; exit 1; }; \
-       done'
-
-# The base image keeps mise's data, config, and cache in /mise, outside the
-# home directory, so tools installed there survive a mounted ~. MISE_YES keeps
-# mise from asking for confirmation when a tool is first fetched.
+# The tools installed above live in /home/vscode/.local/bin, and mise keeps its
+# data, config, and cache in /mise, outside the home directory, so what mise
+# installs survives a mounted ~. MISE_YES keeps mise from asking for
+# confirmation when a tool is first fetched. This has to come before the check
+# below, which resolves the same PATH the container will have.
 ENV PATH="/home/vscode/.local/bin:/mise/shims:${PATH}" \
     MISE_DATA_DIR="/mise" \
     MISE_CONFIG_DIR="/mise" \
     MISE_CACHE_DIR="/mise/cache" \
     MISE_YES="1"
+
+# Fail the build rather than ship an image whose tools do not run.
+RUN for tool in mise uv pdm micromamba bun; do \
+      command -v "$tool" >/dev/null || { echo "$tool is missing" >&2; exit 1; }; \
+    done
 
 USER vscode
 WORKDIR /workspaces
