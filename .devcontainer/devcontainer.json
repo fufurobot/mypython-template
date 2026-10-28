@@ -1,6 +1,6 @@
 {
   "name": "stupidinfer",
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "image": "ghcr.io/bartventer/devcontainer-images/base-archlinux",
   "postCreateCommand": "bash .devcontainer/post-install.sh",
   "postStartCommand": "bash .devcontainer/watch-requirements.sh",
   "remoteEnv": {
