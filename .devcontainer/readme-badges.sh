@@ -134,6 +134,19 @@ for line in read(".env").splitlines():
 if not manager:
     manager = "micromamba" if os.path.isdir(os.path.join(root, "notebooks")) else "uv"
 
+# The package that the release workflow publishes, and where it publishes it.
+# build-package.sh defaults the name, and PACKAGE_NAME may override it, so the
+# default is used only when the release workflow does not name one.
+package_name = ""
+release_workflow = read(os.path.join(".github", "workflows", "release.yml"))
+match = re.search(r"^\s*PACKAGE_NAME:\s*(\S+)\s*$", release_workflow, re.MULTILINE)
+if match:
+    package_name = match.group(1).strip("'\"")
+else:
+    build_script = read(os.path.join(".devcontainer", "build-package.sh"))
+    match = re.search(r"PACKAGE_NAME:-([A-Za-z0-9._-]+)", build_script)
+    package_name = match.group(1) if match else ""
+
 license_text = read("LICENSE")
 licenses = [
     ("GNU AFFERO GENERAL PUBLIC LICENSE", "AGPL-3.0"),
@@ -242,6 +255,15 @@ if github:
     )
 elif license_name:
     badges.append(shields("license", license_name, "blue", "LICENSE"))
+
+# The versions on TestPyPI, read from the index itself. Until a publish
+# succeeds this renders "package not found" rather than a stale value.
+if package_name:
+    badges.append(
+        f"[![TestPyPI](https://img.shields.io/pypi/pyversions/{package_name}"
+        f"?pypiBaseUrl=https://test.pypi.org&logo=pypi&logoColor=white)]"
+        f"(https://test.pypi.org/project/{package_name}/)"
+    )
 
 # Requirement counts have no remote source, so they stay local.
 main_count = count_requirements(requirements)
