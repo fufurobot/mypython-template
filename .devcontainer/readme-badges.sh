@@ -51,6 +51,40 @@ def read(name):
         return handle.read()
 
 
+def dynamic(kind, source, selector, label, link, color="blue", logo="", logo_color="white"):
+    """A shields.io badge whose text is read from SOURCE at render time.
+
+    A source that is missing or unparseable renders a placeholder such as
+    "resource not found" rather than a stale value, which is the point: these
+    badges describe the project as it is on GitHub, not as it was when the
+    watcher last ran. JSON, YAML, and TOML sources take a JSONPath `query`; a
+    plain-text source takes a `search` regex and a `replace` template.
+    """
+    selector_key = "search" if kind == "regex" else "query"
+    params = [
+        ("url", source),
+        (selector_key, selector),
+        ("label", label),
+        ("color", color),
+    ]
+    if kind == "regex":
+        params.append(("replace", "$1"))
+    if logo:
+        params.append(("logo", logo))
+        params.append(("logoColor", logo_color))
+    image = f"https://img.shields.io/badge/dynamic/{kind}?" + "&".join(
+        f"{key}={urllib.parse.quote(value, safe='')}" for key, value in params
+    )
+    return f"[![{label}]({image})]({link})"
+
+
+MANAGER_COLORS = {"uv": "dea584", "pdm": "9575cd", "micromamba": "6db33f"}
+
+
+def badge_color(name):
+    return MANAGER_COLORS.get(name, "blue")
+
+
 def shields(label, message, color, link, logo=""):
     """A shields.io badge that links to link.
 
@@ -121,59 +155,95 @@ def count_requirements(text):
     ])
 
 
-badges = []
+# The workflow the CI badge reports on: the one this template ships, else the
+# first workflow file there is.
+workflows_dir = os.path.join(root, ".github", "workflows")
+workflow_files = (
+    sorted(n for n in os.listdir(workflows_dir) if n.endswith((".yml", ".yaml")))
+    if os.path.isdir(workflows_dir) else []
+)
+own_workflow = (
+    "devcontainer.yml"
+    if "devcontainer.yml" in workflow_files
+    else (workflow_files[0] if workflow_files else "")
+)
 
-if owner and repository:
+badges = []
+# Where the repository is a GitHub one, its own state is the source of truth
+# for every badge that can be read from it.
+github = owner and repository
+base = f"https://github.com/{owner}/{repository}"
+raw = f"https://raw.githubusercontent.com/{owner}/{repository}/{branch}"
+
+if github:
     badges.append(
-        shields("github", f"{owner}/{repository}", "181717",
-                f"https://github.com/{owner}/{repository}", "github")
+        shields("github", f"{owner}/{repository}", "181717", base, "github")
+    )
+    badges.append(
+        dynamic("json", f"https://api.github.com/repos/{owner}/{repository}",
+                "$.default_branch", "branch", base, "181717", "github")
+    )
+    # The latest release, which 404s into "no releases found" until one exists.
+    badges.append(
+        f"[![release](https://img.shields.io/github/v/release/{owner}/{repository}"
+        f"?sort=semver&display_name=tag&logo=github)](https://github.com/"
+        f"{owner}/{repository}/releases/latest)"
     )
 
-if python_constraint:
-    # ">=3.10" reads best as the minimum version, "3.10, 3.11" as the set.
+# The interpreter pin, which the watcher materializes from python-must.
+if github:
+    badges.append(
+        dynamic("regex", f"{raw}/.python-version", r"^(.+)$", "python",
+                "https://www.python.org/downloads/", "3776AB", "python")
+    )
+elif python_constraint:
     python_message = re.sub(r"^[\^~=]+", "", python_constraint) or python_constraint
-    if python_message.startswith(">"):
-        python_message = ">=" + python_message.lstrip(">=").lstrip("=")
     badges.append(
         shields("python", python_message, "3776AB",
                 "https://www.python.org/downloads/", "python")
     )
 
-if manager == "uv":
-    badges.append(shields("manager", "uv", "dea584", "https://docs.astral.sh/uv/", "uv"))
-elif manager == "pdm":
-    badges.append(shields("manager", "pdm", "9575cd", "https://pdm-project.org/", "pdm"))
-elif manager == "micromamba":
+# The managers the CI workflow exercises, straight from its matrix.
+if github:
     badges.append(
-        shields("manager", "micromamba", "6db33f", "https://mamba.readthedocs.io/")
+        dynamic("yaml", f"{raw}/.github/workflows/devcontainer.yml",
+                "$.jobs.scripts.strategy.matrix.manager[*]", "managers", base,
+                badge_color(manager))
     )
 
 # Binder builds an environment from the repository, so it needs a repository
 # that mybinder.org can clone, not just a checkout.
-if owner and repository:
+if github:
     badges.append(
         "[![Binder](https://mybinder.org/badge_logo.svg)]"
         f"(https://mybinder.org/v2/gh/{owner}/{repository}/{branch})"
     )
+
     badges.append(
         shields("codespaces", "open", "181717",
                 f"https://codespaces.new/{owner}/{repository}?quickstart=1", "github")
     )
 
-workflows = os.path.join(root, ".github", "workflows")
-if os.path.isdir(workflows):
-    for name in sorted(os.listdir(workflows)):
-        if name.endswith((".yml", ".yaml")):
-            workflow = name.rsplit(".", 1)[0]
-            badges.append(
-                shields("ci", "passing", "2088FF",
-                        f"https://github.com/{owner}/{repository}/actions/workflows/{name}",
-                        "githubactions")
-            )
+if own_workflow:
+    badges.append(
+        f"[![ci](https://img.shields.io/github/actions/workflow/status/{owner}/"
+        f"{repository}/{own_workflow}?branch={branch}&logo=githubactions"
+        f"&logoColor=white)]({base}/actions/workflows/{own_workflow})"
+    )
 
-if license_name:
+if github:
+    badges.append(
+        f"[![license](https://img.shields.io/github/license/{owner}/{repository}"
+        f"?logo=gnu&color=blue)]({base}/blob/{branch}/LICENSE)"
+    )
+    badges.append(
+        f"[![last commit](https://img.shields.io/github/last-commit/{owner}/"
+        f"{repository}?branch={branch})]({base}/commits/{branch})"
+    )
+elif license_name:
     badges.append(shields("license", license_name, "blue", "LICENSE"))
 
+# Requirement counts have no remote source, so they stay local.
 main_count = count_requirements(requirements)
 dev_count = count_requirements(read("requirements-dev.txt"))
 if main_count:
