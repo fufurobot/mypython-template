@@ -4,6 +4,7 @@ set -euo pipefail
 script_path="$(realpath "${BASH_SOURCE[0]}")"
 repo_root="$(dirname "$(dirname "$script_path")")"
 requirements_file="$repo_root/requirements.txt"
+dev_requirements_file="$repo_root/requirements-dev.txt"
 pyproject_file="$repo_root/pyproject.toml"
 environment_file="$repo_root/environment.yml"
 env_file="$repo_root/.env"
@@ -11,6 +12,89 @@ watcher_log="${TMPDIR:-/tmp}/stupidinfer-dependencies-watcher.log"
 lock_file="${TMPDIR:-/tmp}/stupidinfer-dependencies-watcher.lock"
 
 project_name="$(basename "$repo_root" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')"
+
+# ---------------------------------------------------------------------------
+# Requirements files
+#
+# A comment whose whole content is a group name opens a group in
+# requirements.txt, and the requirements after it belong to that group:
+#
+#   numpy
+#   # tools
+#   ruff
+#   black
+#
+# leaves numpy ungrouped and puts ruff and black in the `tools` group. Other
+# comments are ignored. requirements-dev.txt is a plain list without groups and
+# is installed into the development group.
+# ---------------------------------------------------------------------------
+
+# print_group FILE GROUP: the requirements of one group, one per line. The group
+# is "" for the requirements before the first group.
+print_group() {
+  awk -v group="$2" '
+    {
+      sub(/\r$/, "")
+      sub(/^[[:space:]]+/, "")
+      sub(/[[:space:]]+$/, "")
+      if ($0 == "") {
+        next
+      }
+      if ($0 ~ /^#/) {
+        header = $0
+        sub(/^#[[:space:]]*/, "", header)
+        if (header ~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/) {
+          section = header
+        }
+        next
+      }
+      if (tolower($0) ~ /^python-must([[:space:]<>=!~]|$)/) {
+        next
+      }
+      if (section == group) {
+        print
+      }
+    }
+  ' "$1"
+}
+
+# print_groups FILE: the names of the groups of FILE, one per line.
+print_groups() {
+  awk '
+    {
+      sub(/\r$/, "")
+      sub(/^[[:space:]]+/, "")
+      sub(/[[:space:]]+$/, "")
+      if ($0 !~ /^#/) {
+        next
+      }
+      header = $0
+      sub(/^#[[:space:]]*/, "", header)
+      if (header ~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/ && !(header in seen)) {
+        seen[header] = 1
+        print header
+      }
+    }
+  ' "$1"
+}
+
+read_python_constraint() {
+  if [[ ! -f "$requirements_file" ]]; then
+    return 0
+  fi
+  awk '
+    {
+      sub(/\r$/, "")
+      if (tolower($1) == "python-must") {
+        $1 = ""
+        sub(/^[[:space:]]+/, "")
+        print
+        count++
+      }
+    }
+    END { if (count > 1) exit 1 }
+  ' "$requirements_file" | tr -d '[:space:]'
+}
 
 load_dependency_manager() {
   local manager="" line value
@@ -54,110 +138,84 @@ load_dependency_manager() {
   esac
 }
 
-read_python_constraint() {
+require_requirements() {
   if [[ ! -f "$requirements_file" ]]; then
-    return 0
-  fi
-  awk 'tolower($1) == "python-must" { $1 = ""; sub(/^[[:space:]]+/, ""); print; count++ } END { if (count > 1) exit 1 }' "$requirements_file" \
-    | tr -d '[:space:]'
-}
-
-require_requirements_for_bootstrap() {
-  if [[ ! -f "$requirements_file" ]]; then
-    printf 'Cannot initialize the selected dependency manifest: %s is missing\n' "$requirements_file" >&2
+    printf 'Cannot synchronize dependencies: %s is missing\n' "$requirements_file" >&2
     return 1
   fi
 }
 
-initialize_uv_manifest() {
-  local python_constraint temp_requirements
+initialize_uv_project() {
+  local python_constraint
   python_constraint="$(read_python_constraint)"
-
   local uv_init_args=(init --bare --name "$project_name")
   if [[ -n "$python_constraint" ]]; then
     uv_init_args+=(--python "$python_constraint")
   fi
   uv "${uv_init_args[@]}" "$repo_root"
-
-  temp_requirements="$1/requirements.txt"
-  sed '/^[[:space:]]*python-must\([[:space:]<>=!~]\|$\)/Id' "$requirements_file" > "$temp_requirements"
-  if [[ -s "$temp_requirements" ]]; then
-    uv add --project "$repo_root" --no-sync --requirements "$temp_requirements"
-  fi
 }
 
-initialize_micromamba_manifest() {
-  python3 - "$requirements_file" "$environment_file" "$project_name" "$(read_python_constraint)" <<'PY'
-import json
-import sys
-
-requirements_path, environment_path, project_name, python_constraint = sys.argv[1:]
-dependencies = []
-with open(requirements_path, encoding="utf-8") as requirements:
-    for line in requirements:
-        requirement = line.strip()
-        if not requirement or requirement.startswith("#") or requirement.lower().startswith("python-must"):
-            continue
-        dependencies.append(requirement)
-
-with open(environment_path, "w", encoding="utf-8") as environment:
-    environment.write(f"name: {project_name}\nchannels:\n  - conda-forge\ndependencies:\n")
-    environment.write(f"  - python{python_constraint}\n  - pip\n")
-    if dependencies:
-        environment.write("  - pip:\n")
-        for dependency in dependencies:
-            environment.write(f"      - {json.dumps(dependency)}\n")
-PY
+# uv_add GROUP FILE: lets uv add FILE, either to the dependency group GROUP or,
+# for an empty GROUP, to the project dependencies.
+uv_add() {
+  local group="$1" file="$2"
+  if [[ -n "$group" ]]; then
+    uv add --project "$repo_root" --no-sync --group "$group" --requirements "$file"
+  else
+    uv add --project "$repo_root" --no-sync --requirements "$file"
+  fi
 }
 
 sync_uv_project() (
-  local temp_dir python_constraint
+  local temp_dir group
   temp_dir="$(mktemp -d)"
   trap 'rm -rf "$temp_dir"' EXIT
 
+  require_requirements
   if [[ ! -f "$pyproject_file" ]]; then
-    require_requirements_for_bootstrap
-    initialize_uv_manifest "$temp_dir"
+    initialize_uv_project
+  fi
+
+  print_group "$requirements_file" "" > "$temp_dir/requirements.txt"
+  if [[ -s "$temp_dir/requirements.txt" ]]; then
+    uv_add "" "$temp_dir/requirements.txt"
+  fi
+  while IFS= read -r group; do
+    print_group "$requirements_file" "$group" > "$temp_dir/$group.txt"
+    if [[ -s "$temp_dir/$group.txt" ]]; then
+      uv_add "$group" "$temp_dir/$group.txt"
+    fi
+  done < <(print_groups "$requirements_file")
+
+  if [[ -f "$dev_requirements_file" ]]; then
+    uv add --project "$repo_root" --no-sync --dev --requirements "$dev_requirements_file"
   fi
 
   uv sync --project "$repo_root"
-
-  uv export --project "$repo_root" --format requirements-txt --no-header --no-emit-project \
-    --output-file "$temp_dir/requirements.txt"
-
-  python_constraint="$(read_python_constraint)"
-  if [[ -z "$python_constraint" ]]; then
-    python_constraint="$(python3 - "$pyproject_file" <<'PY'
-import sys
-import tomllib
-
-with open(sys.argv[1], "rb") as pyproject:
-    requires_python = tomllib.load(pyproject).get("project", {}).get("requires-python", "")
-print(requires_python)
-PY
-)"
-  fi
-  local python_spec="python${python_constraint}"
-
-  export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-$HOME/.cache/mamba}"
-  micromamba create --yes --prefix "$temp_dir/environment" --channel conda-forge "$python_spec" pip
-  if [[ -s "$temp_dir/requirements.txt" ]]; then
-    micromamba run --prefix "$temp_dir/environment" python -m pip install \
-      --disable-pip-version-check -r "$temp_dir/requirements.txt"
-  fi
-  micromamba env export --prefix "$temp_dir/environment" --no-builds \
-    | sed -E "s|^name:.*$|name: $project_name|; /^prefix:[[:space:]]/d" \
-      > "$temp_dir/environment.yml"
-  cp "$temp_dir/environment.yml" "$environment_file"
 )
 
+initialize_environment() {
+  python3 - "$environment_file" "$project_name" "$(read_python_constraint)" <<'PY'
+import json
+import re
+import sys
+
+path, name, constraint = sys.argv[1:]
+python = "python" + (re.sub(r"\s+", "", constraint) or ">=3.10")
+lines = [f"name: {json.dumps(name)}", "channels:", "  - conda-forge", "dependencies:", f"  - {python}", "  - pip"]
+with open(path, "w", encoding="utf-8") as environment:
+    environment.write("\n".join(lines) + "\n")
+PY
+}
+
 sync_micromamba_project() (
-  local python_version temp_dir temp_requirements
+  local group file temp_dir
+  local -a group_files=()
   export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-$HOME/.cache/mamba}"
 
+  require_requirements
   if [[ ! -f "$environment_file" ]]; then
-    require_requirements_for_bootstrap
-    initialize_micromamba_manifest
+    initialize_environment
   fi
 
   if [[ -f "$repo_root/.venv/conda-meta/history" ]]; then
@@ -169,19 +227,30 @@ sync_micromamba_project() (
     micromamba create --yes --prefix "$repo_root/.venv" --file "$environment_file"
   fi
 
+  # Groups are not a micromamba concept, so each one is pip-installed into the
+  # environment on its own, as pip does not know about the group comments.
   temp_dir="$(mktemp -d)"
   trap 'rm -rf "$temp_dir"' EXIT
-  python_version="$(micromamba run --prefix "$repo_root/.venv" python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-  local uv_init_args=(init --bare --name "$project_name" --python "$python_version")
-  uv "${uv_init_args[@]}" "$temp_dir/project"
+  print_group "$requirements_file" "" > "$temp_dir/requirements.txt"
+  while IFS= read -r group; do
+    print_group "$requirements_file" "$group" > "$temp_dir/$group.txt"
+    group_files+=("$temp_dir/$group.txt")
+  done < <(print_groups "$requirements_file")
 
-  temp_requirements="$temp_dir/requirements.txt"
-  micromamba run --prefix "$repo_root/.venv" python -m pip freeze \
-    | sed -E '/^(pip|setuptools|wheel)==/d' > "$temp_requirements"
-  if [[ -s "$temp_requirements" ]]; then
-    uv add --project "$temp_dir/project" --no-sync --requirements "$temp_requirements"
+  if [[ -s "$temp_dir/requirements.txt" ]]; then
+    micromamba run --prefix "$repo_root/.venv" python -m pip install \
+      --disable-pip-version-check -r "$temp_dir/requirements.txt"
   fi
-  cp "$temp_dir/project/pyproject.toml" "$pyproject_file"
+  for file in ${group_files[@]+"${group_files[@]}"}; do
+    if [[ -s "$file" ]]; then
+      micromamba run --prefix "$repo_root/.venv" python -m pip install \
+        --disable-pip-version-check -r "$file"
+    fi
+  done
+  if [[ -f "$dev_requirements_file" ]]; then
+    micromamba run --prefix "$repo_root/.venv" python -m pip install \
+      --disable-pip-version-check -r "$dev_requirements_file"
+  fi
 )
 
 sync_project() {
@@ -197,24 +266,14 @@ sync_project() {
 }
 
 input_hash() {
-  local manager
+  local manager file
   manager="$(load_dependency_manager)"
   {
     printf '%s\n' "$manager"
-    [[ ! -f "$env_file" ]] || sha256sum "$env_file"
-    if [[ "$manager" == "uv" ]]; then
-      if [[ -f "$pyproject_file" ]]; then
-        sha256sum "$pyproject_file"
-      elif [[ -f "$requirements_file" ]]; then
-        sha256sum "$requirements_file"
-      fi
-    else
-      if [[ -f "$environment_file" ]]; then
-        sha256sum "$environment_file"
-      elif [[ -f "$requirements_file" ]]; then
-        sha256sum "$requirements_file"
-      fi
-    fi
+    for file in "$env_file" "$pyproject_file" "$environment_file" \
+      "$requirements_file" "$dev_requirements_file"; do
+      [[ ! -f "$file" ]] || sha256sum "$file"
+    done
   } | sha256sum | awk '{print $1}'
 }
 
@@ -235,7 +294,7 @@ if [[ "${1:-}" == "--watch-loop" ]]; then
       if sync_project; then
         last_hash="$(input_hash)"
       else
-        printf 'Dependency synchronization failed at %s\n' "$(date -Is)" >> "$watcher_log"
+        printf 'Dependency synchronization failed at %s\n' "$(date -Is)" >>"$watcher_log"
         last_hash="$current_hash"
       fi
     fi
