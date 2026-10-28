@@ -62,10 +62,17 @@ them the README is left alone, and everything outside them is preserved.
 # Binder
 
 `binder/environment.yml` configures [Binder](https://mybinder.org): repo2docker
-builds the project with its Miniconda image and pins Python 3.12, a version it
-ships a lock file for. Keep its pip list in sync with `requirements.txt` and
-`requirements-dev.txt`, as repo2docker runs `mamba env update` on that file
-directly and relative `-r` references are unreliable there.
+builds the project with its Miniconda image. It is a symlink to the generated
+root `environment.yml`, so the environment is defined once.
+
+The symlink is expected to dangle in a fresh clone: the root `environment.yml`
+is generated per project and is not committed. The dependency watcher creates
+the link once the root file exists, replaces a link that points elsewhere, and
+leaves a regular file alone, since that one may hold hand edits.
+
+Because the environment comes from the generated file, its Python version is
+the one derived from `python-must`, so keep that line on a version repo2docker
+ships a lock file for.
 
 A Binder workspace is recognised by the `BINDER_*` variables that Binder sets.
 In one, the dependency manager is always micromamba: a root `notebooks/`
