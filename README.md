@@ -50,3 +50,20 @@ not needed to run the project.
 `pyproject.toml` and `environment.yml` are generated from the name of the
 project root, so this template does not commit them. Each project gets its own,
 and neither is ignored, so they can be committed or edited by hand per project.
+
+# badges
+
+Everything between these two markers is generated, so the badges follow the
+project instead of a hardcoded repository:
+
+```text
+<!-- BEGIN BADGE INJECTION -->
+<!-- END BADGE INJECTION -->
+```
+
+The injector reads the `origin` remote, the current branch, `python-must`,
+`DEPENDENCY_MANAGER`, `LICENSE`, `.github/workflows/`, and the requirements
+files, then writes the repository, Python, manager, Codespaces, Binder, CI,
+license, and dependency badges. Leave the markers in place: without both of
+them the README is left alone, and everything outside them is preserved.
+
