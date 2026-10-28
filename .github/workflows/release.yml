@@ -1,0 +1,67 @@
+name: release
+
+# Publishes the project to TestPyPI with a Trusted Publisher: GitHub Actions
+# obtains a short-lived token over OIDC, so no API token is stored anywhere.
+# The pending publisher on TestPyPI must name this repository, this workflow
+# file, and the environment below.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Generate the package
+        run: bash .devcontainer/build-package.sh "$RUNNER_TEMP" "$GITHUB_REPOSITORY"
+
+      - name: Show what will be published
+        working-directory: ${{ runner.temp }}/dist
+        run: |
+          set -euo pipefail
+          ls -l
+          python3 - <<'PY'
+          import glob
+          import zipfile
+
+          for wheel in glob.glob("*.whl"):
+              print(wheel)
+              for name in zipfile.ZipFile(wheel).namelist():
+                  print("  ", name)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: ${{ runner.temp }}/dist
+
+  publish:
+    name: publish to TestPyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/mypython-template-fufurobot
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/

@@ -103,3 +103,41 @@ synchronization on a GitHub runner for each dependency manager, then checks the
 generated manifest and badges. Use it instead of running the scripts locally
 when the network is unreliable: `gh workflow run devcontainer.yml`, or push
 under `.devcontainer/`, `binder/`, or `requirements*.txt`.
+
+# publishing
+
+The template is not a Python package: it describes an environment through
+`requirements.txt`. To publish one anyway, `.devcontainer/build-package.sh`
+generates a package in a scratch directory with `uv init --package`, which
+writes a `pyproject.toml` and a `src` layout, and adds both requirements files
+as its development dependencies, so the package and the environment cannot
+drift apart. `python-must` and the `# <name>` group headers are dropped on the
+way, since neither is a package.
+
+```bash
+bash .devcontainer/build-package.sh "$TMPDIR/mypython-template" fufurobot/mypython-template
+# artifacts in $TMPDIR/mypython-template/dist
+```
+
+`.github/workflows/release.yml` runs that script and publishes to TestPyPI
+through a [Trusted Publisher](https://docs.pypi.org/trusted-publishers/): the
+workflow asks GitHub for an OIDC token, so no API token or password is stored.
+The pending publisher on TestPyPI has to name, exactly:
+
+| Field | Value |
+| --- | --- |
+| Project | `mypython-template-fufurobot` |
+| Owner | `fufurobot` |
+| Repository | `mypython-template` |
+| Workflow | `release.yml` |
+| Environment | `testpypi` |
+
+Publishing happens on a `v*` tag or by running the workflow by hand:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+gh workflow run release.yml
+```
+
+TestPyPI refuses a version that already exists, so every publish needs a new
+one.
