@@ -48,11 +48,15 @@ install_micromamba() {
   esac
 
   temp_dir="$(mktemp -d)"
-  trap 'rm -rf "$temp_dir"' EXIT
-
-  curl -LsS "https://micro.mamba.pm/api/micromamba/${platform}/latest" \
-    | tar -xj -C "$temp_dir" bin/micromamba
+  # The directory is removed here rather than from an EXIT trap: a trap runs
+  # after this function has returned, where temp_dir no longer exists.
+  if ! curl -LsS "https://micro.mamba.pm/api/micromamba/${platform}/latest" \
+    | tar -xj -C "$temp_dir" bin/micromamba; then
+    rm -rf "$temp_dir"
+    return 1
+  fi
   install -m 0755 "$temp_dir/bin/micromamba" "$install_dir/micromamba"
+  rm -rf "$temp_dir"
 }
 
 install_bun() {
