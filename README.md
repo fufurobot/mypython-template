@@ -146,17 +146,79 @@ between publishes is what makes each run uploadable.
 
 ## attestations
 
-The publish step runs with `attestations: false`. Publish API attestations are
-signed through [Sigstore](https://www.sigstore.dev/)'s transparency log, Rekor,
-and Rekor answered `502 Bad Gateway` to this repository's runners while being
-healthy elsewhere, which failed the publish before any upload started. Nothing
-about publishing to TestPyPI depends on them. Re-enable attestations, by
-dropping that line, when publishing to PyPI proper, and check that the failure
-is gone first:
+### what they are
+
+An attestation is a signed statement about an uploaded file. When the package
+is published, the workflow can also send a small in-toto document per file that
+says, in effect, *this exact wheel, with this exact hash, was built and
+published by this specific GitHub Actions workflow of this repository*.
+
+The signature does not come from a stored key. GitHub Actions mints a
+short-lived OIDC token, Sigstore exchanges it for a certificate, the attestation
+is signed with that certificate's key, and the signature is recorded in
+Sigstore's transparency log, [Rekor](https://www.sigstore.dev/), so it can be
+verified later by anyone, not just by PyPI.
+
+These are the same OIDC mechanics that a Trusted Publisher uses for
+authentication, reused to make a claim that outlives the upload. PyPI stores
+the attestations it receives next to the files it serves, and they can be
+checked afterwards with tooling such as `pypi-attestations` and
+`pip install --attest` (see [PyPI's attestation
+docs](https://docs.pypi.org/attestations/) and
+[PEP 740](https://peps.python.org/pep-0740/)).
+
+### why they matter for PyPI
+
+- **Provenance.** A consumer can check that a wheel really came from this
+  repository's release workflow, not from someone who rebuilt it, or uploaded a
+  lookalike to another index.
+- **Tamper evidence.** The signature binds the file contents to a hash, so a
+  differ-by-one-byte substitution no longer goes unnoticed.
+- **A durable audit trail.** The Trusted Publisher token that authorised the
+  upload expires in minutes; the attestation remains, and names the workflow
+  and repository that published it.
+- **They are what PyPI is moving toward.** PyPI verifies publisher identity at
+  upload time regardless, but attestations are the part that a downstream user
+  can verify for themselves, without trusting the index's word for it.
+
+None of this makes an upload work or fail, which is why turning them off is a
+real choice rather than a break: the package still installs, it just arrives
+without a verifiable statement about where it came from.
+
+### why they are off on TestPyPI
+
+The publish step runs with `attestations: false` for one concrete reason:
+Rekor answered `502 Bad Gateway` to this repository's runners, twice in a row,
+while being healthy when probed from elsewhere. Because signing happens before
+the upload, the failure aborted the publish and nothing reached TestPyPI at
+all:
 
 ```text
 sigstore._internal.rekor.RekorClientError: Rekor returned an unknown error with HTTP 502
 ```
 
-The build job runs regardless, so a publish failure never loses the artifacts:
-they are uploaded as the `dist` artifact of the run.
+TestPyPI is a rehearsal target: it exists to prove that the packaging and the
+publisher configuration work, its uploads are disposable, and nobody installs
+from it expecting a provenance guarantee. Taking on a dependency on a third
+party's uptime, to add signatures nobody consumes there, is the wrong trade.
+
+For PyPI proper the opposite holds, and the line should be dropped:
+
+```yaml
+- uses: pypa/gh-action-pypi-publish@release/v1
+  with:
+    # attestations: false        # remove this for PyPI proper
+```
+
+Before relying on it, confirm that Rekor is answering, since a `502` there
+fails the publish before any upload starts.
+
+### artifacts survive a failed publish
+
+The `build` job is separate from `publish`, so a failed publish never loses the
+work: the wheel and sdist remain attached to the run as the `dist` artifact,
+and only the `publish` job needs to be re-run:
+
+```bash
+gh run rerun <run-id> --failed
+```
