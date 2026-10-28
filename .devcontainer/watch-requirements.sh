@@ -303,7 +303,13 @@ read_requirements_of() {
     return 0
   fi
   while IFS= read -r requirement; do
+    requirement="${requirement%$'\r'}"
+    # pdm takes the requirements as arguments, so comments and blank lines
+    # have to go: a comment reaches pdm as a specifier and fails with
+    # "Expected package name at the start of dependency specifier".
+    requirement="$(sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' <<<"$requirement")"
     [[ -n "$requirement" ]] || continue
+    [[ "$requirement" == \#* ]] && continue
     printf '%s\0' "$requirement"
   done < "$file"
 }
