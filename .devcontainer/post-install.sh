@@ -50,8 +50,16 @@ install_micromamba() {
   temp_dir="$(mktemp -d)"
   # The directory is removed here rather than from an EXIT trap: a trap runs
   # after this function has returned, where temp_dir no longer exists.
-  if ! curl -LsS "https://micro.mamba.pm/api/micromamba/${platform}/latest" \
-    | tar -xj -C "$temp_dir" bin/micromamba; then
+  # The archive is downloaded first and unpacked second, because a pipeline
+  # reports the status of tar rather than of a failed curl.
+  if ! curl -fLsS --retry 3 --retry-all-errors \
+    -o "$temp_dir/micromamba.tar.bz2" "https://micro.mamba.pm/api/micromamba/${platform}/latest"; then
+    printf 'Could not download micromamba for %s\n' "$platform" >&2
+    rm -rf "$temp_dir"
+    return 1
+  fi
+  if ! tar -xjf "$temp_dir/micromamba.tar.bz2" -C "$temp_dir" bin/micromamba; then
+    printf 'The micromamba archive does not contain bin/micromamba\n' >&2
     rm -rf "$temp_dir"
     return 1
   fi
