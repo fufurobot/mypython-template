@@ -2,7 +2,7 @@
 
 <!-- BEGIN BADGE INJECTION -->
 
-[![github](https://img.shields.io/badge/github-fufurobot%2Fmypython--template-181717?logo=github&logoColor=white)](https://github.com/fufurobot/mypython-template) [![branch](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2Ffufurobot%2Fmypython-template&query=%24.default_branch&label=branch&color=181717&logo=github&logoColor=white)](https://github.com/fufurobot/mypython-template) [![release](https://img.shields.io/github/v/release/fufurobot/mypython-template?sort=semver&display_name=tag&logo=github)](https://github.com/fufurobot/mypython-template/releases/latest) [![python](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffufurobot%2Fmypython-template%2Fmain%2F.python-version&search=%5E%28.%2B%29%24&label=python&color=3776AB&replace=%241&logo=python&logoColor=white)](https://www.python.org/downloads/) [![managers](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffufurobot%2Fmypython-template%2Fmain%2F.github%2Fworkflows%2Fdevcontainer.yml&query=%24.jobs.scripts.strategy.matrix.manager%5B%2A%5D&label=managers&color=dea584)](https://github.com/fufurobot/mypython-template) [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/fufurobot/mypython-template/main) [![codespaces](https://img.shields.io/badge/codespaces-open-181717?logo=github&logoColor=white)](https://codespaces.new/fufurobot/mypython-template?quickstart=1) [![ci](https://img.shields.io/github/actions/workflow/status/fufurobot/mypython-template/devcontainer.yml?branch=main&logo=githubactions&logoColor=white)](https://github.com/fufurobot/mypython-template/actions/workflows/devcontainer.yml) [![license](https://img.shields.io/github/license/fufurobot/mypython-template?logo=gnu&color=blue)](https://github.com/fufurobot/mypython-template/blob/main/LICENSE) [![last commit](https://img.shields.io/github/last-commit/fufurobot/mypython-template?branch=main)](https://github.com/fufurobot/mypython-template/commits/main) [![dev dependencies](https://img.shields.io/badge/dev_dependencies-1-blue)](requirements-dev.txt)
+[![github](https://img.shields.io/badge/github-fufurobot%2Fmypython--template-181717?logo=github&logoColor=white)](https://github.com/fufurobot/mypython-template) [![branch](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2Ffufurobot%2Fmypython-template&query=%24.default_branch&label=branch&color=181717&logo=github&logoColor=white)](https://github.com/fufurobot/mypython-template) [![release](https://img.shields.io/github/v/release/fufurobot/mypython-template?sort=semver&display_name=tag&logo=github)](https://github.com/fufurobot/mypython-template/releases/latest) [![python](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffufurobot%2Fmypython-template%2Fmain%2F.python-version&search=%5E%28.%2B%29%24&label=python&color=3776AB&replace=%241&logo=python&logoColor=white)](https://www.python.org/downloads/) [![managers](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffufurobot%2Fmypython-template%2Fmain%2F.github%2Fworkflows%2Fdevcontainer.yml&query=%24.jobs.scripts.strategy.matrix.manager%5B%2A%5D&label=managers&color=dea584)](https://github.com/fufurobot/mypython-template) [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/fufurobot/mypython-template/main) [![codespaces](https://img.shields.io/badge/codespaces-open-181717?logo=github&logoColor=white)](https://codespaces.new/fufurobot/mypython-template?quickstart=1) [![ci](https://img.shields.io/github/actions/workflow/status/fufurobot/mypython-template/devcontainer.yml?branch=main&logo=githubactions&logoColor=white)](https://github.com/fufurobot/mypython-template/actions/workflows/devcontainer.yml) [![license](https://img.shields.io/github/license/fufurobot/mypython-template?logo=gnu&color=blue)](https://github.com/fufurobot/mypython-template/blob/main/LICENSE) [![last commit](https://img.shields.io/github/last-commit/fufurobot/mypython-template?branch=main)](https://github.com/fufurobot/mypython-template/commits/main) [![TestPyPI](https://img.shields.io/pypi/pyversions/mypython-template-fufurobot?pypiBaseUrl=https://test.pypi.org&logo=pypi&logoColor=white)](https://test.pypi.org/project/mypython-template-fufurobot/) [![dev dependencies](https://img.shields.io/badge/dev_dependencies-2-blue)](requirements-dev.txt)
 
 <!-- END BADGE INJECTION -->
 
@@ -237,6 +237,49 @@ and the other three fan out from it:
 
 A `workflow_dispatch` run does everything except the GitHub release, which is
 gated on a tag, so the workflow can be rehearsed without creating one.
+
+## versions and collisions
+
+An index refuses a version it already holds, so a second publish of `0.1.0`
+fails. The obvious fix, tagging each build with its commit as a local version
+(`0.1.0+2f7369b`), does not work: PEP 440 forbids a local version on a public
+index, and both PyPI and TestPyPI reject it with
+
+```text
+400 The use of local versions in <Version('0.1.0+2f7369b')> is not allowed.
+```
+
+A pre-release segment may carry the commit instead, so the build job numbers
+each build `BASE.devN`, where `N` is the decimal value of the commit's short
+SHA: `0.1.0.dev49755803`. `.dev` accepts only a number, which is why the hex
+digits are read as a decimal. That is unique per commit, but it does **not**
+sort chronologically — a later commit can have a smaller number — so it is a
+stopgap for keeping rehearsals from colliding, not a versioning policy.
+
+For versions that mean something, bump them on purpose with
+[bump-my-version](https://pypi.org/project/bump-my-version/), the tool listed
+in `requirements-dev.txt`. It is worth using because it rewrites the version in
+every file that carries it and commits the change, so the number is chosen
+rather than derived, it sorts correctly, and it can produce a matching tag:
+
+```bash
+uv run bump-my-version bump patch   # 0.1.0 -> 0.1.1
+uv run bump-my-version bump minor   # 0.1.1 -> 0.2.0
+```
+
+Configure it in `pyproject.toml` with the files that hold the version, and
+point it at your tags:
+
+```toml
+[tool.bumpversion]
+current_version = "0.1.0"
+commit = true
+tag = true
+tag_name = "v{new_version}"
+```
+
+Once a version is chosen that way, the commit-derived pre-release is noise; the
+build job derives it only because nothing else supplies a number.
 
 ## the devcontainer image
 

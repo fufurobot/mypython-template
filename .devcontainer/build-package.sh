@@ -10,6 +10,9 @@ set -euo pipefail
 # --package`, which writes a pyproject.toml and a src layout, and the
 # requirements become its development dependencies, so the two do not drift
 # apart. The artifacts are left in WORKDIR/dist.
+#
+# PACKAGE_VERSION sets the version; without it the version that uv init wrote is
+# used unchanged.
 
 workdir="${1:?usage: build-package.sh WORKDIR [OWNER/REPOSITORY]}"
 repository="${2:-}"
@@ -45,6 +48,12 @@ plain_requirements() {
 
 main_requirements="$workdir/main-requirements.txt"
 dev_requirements="$workdir/dev-requirements.txt"
+
+# PACKAGE_VERSION wins over whatever version uv init chose.
+if [[ -n "${PACKAGE_VERSION:-}" ]]; then
+  sed -i -E "s|^version = \".*\"\$|version = \"${PACKAGE_VERSION}\"|" "$project_dir/pyproject.toml"
+fi
+
 plain_requirements "$requirements_file" > "$main_requirements"
 plain_requirements "$dev_requirements_file" > "$dev_requirements"
 
@@ -55,19 +64,44 @@ if [[ -s "$dev_requirements" ]]; then
   uv add --project "$project_dir" --dev --requirements "$dev_requirements"
 fi
 
-if [[ -n "$repository" ]]; then
-  python3 - "$project_dir/pyproject.toml" "$repository" <<'PY'
+# uv init writes no classifiers, and the python-versions badge on an index
+# reads "Programming Language :: Python :: X.Y" rather than requires-python,
+# so the versions the project supports are listed here.
+# uv init writes no classifiers, and the python-versions badge on an index
+# reads "Programming Language :: Python :: X.Y" rather than requires-python.
+python3 - "$project_dir/pyproject.toml" "$repository" "${python_version:-3.10}" <<'PY'
+import re
 import sys
-import tomllib
 
-path, repository = sys.argv[1:]
-with open(path, "rb") as handle:
-    project = tomllib.load(handle)["project"]
-if "urls" in project:
-    sys.exit(0)
-with open(path, "a", encoding="utf-8") as handle:
-    handle.write(f'\n[project.urls]\nRepository = "https://github.com/{repository}"\n')
+path, repository, minimum = sys.argv[1:]
+text = open(path, encoding="utf-8").read()
+
+# The python-versions badge on an index reads these classifiers rather than
+# requires-python, and uv init writes none.
+known = [(3, 10), (3, 11), (3, 12), (3, 13)]
+try:
+    lower = tuple(int(part) for part in minimum.split(".")[:2])
+except ValueError:
+    lower = (3, 10)
+classifiers = ["Programming Language :: Python :: 3"]
+classifiers += [
+    f"Programming Language :: Python :: {major}.{minor}"
+    for major, minor in known
+    if (major, minor) >= lower
+]
+
+block = "classifiers = [\n" + "".join(f'    "{c}",\n' for c in classifiers) + "]"
+if not re.search(r"^classifiers\s*=", text, re.MULTILINE):
+    anchor = re.search(r"^requires-python\s*=.*$", text, re.MULTILINE)
+    if anchor:
+        text = text[: anchor.end()] + "\n" + block + text[anchor.end():]
+    else:
+        raise SystemExit("pyproject.toml has no requires-python to anchor on")
+
+if repository and "[project.urls]" not in text:
+    text = text.rstrip("\n") + f'\n\n[project.urls]\nRepository = "https://github.com/{repository}"\n'
+
+open(path, "w", encoding="utf-8").write(text)
 PY
-fi
 
 uv build --project "$project_dir" --out-dir "$workdir/dist"
