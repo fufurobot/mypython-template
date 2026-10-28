@@ -2,15 +2,15 @@
 
 <!-- BEGIN BADGE INJECTION -->
 
-[![github](https://img.shields.io/badge/github-fufurobot%2Fmypython--template-181717?logo=github&logoColor=white)](https://github.com/fufurobot/mypython-template) [![python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/) [![manager](https://img.shields.io/badge/manager-uv-dea584?logo=uv&logoColor=white)](https://docs.astral.sh/uv/) [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/fufurobot/mypython-template/main) [![codespaces](https://img.shields.io/badge/codespaces-open-181717?logo=github&logoColor=white)](https://codespaces.new/fufurobot/mypython-template?quickstart=1) [![license](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE) [![dev dependencies](https://img.shields.io/badge/dev_dependencies-1-blue)](requirements-dev.txt)
+[![github](https://img.shields.io/badge/github-fufurobot%2Fmypython--template-181717?logo=github&logoColor=white)](https://github.com/fufurobot/mypython-template) [![python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/) [![manager](https://img.shields.io/badge/manager-uv-dea584?logo=uv&logoColor=white)](https://docs.astral.sh/uv/) [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/fufurobot/mypython-template/main) [![codespaces](https://img.shields.io/badge/codespaces-open-181717?logo=github&logoColor=white)](https://codespaces.new/fufurobot/mypython-template?quickstart=1) [![ci](https://img.shields.io/badge/ci-passing-2088FF?logo=githubactions&logoColor=white)](https://github.com/fufurobot/mypython-template/actions/workflows/devcontainer.yml) [![license](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE) [![dev dependencies](https://img.shields.io/badge/dev_dependencies-1-blue)](requirements-dev.txt)
 
 <!-- END BADGE INJECTION -->
 
 # features
 
-- compatible with both uv and micromamba
+- compatible with uv, pdm, and micromamba
 - auto devcontainer that show respect to python version
-- set `DEPENDENCY_MANAGER=uv` or `DEPENDENCY_MANAGER=micromamba` in `.env` to select the project dependency manager. If unset, projects with a root `notebooks/` directory use micromamba and other projects use uv.
+- set `DEPENDENCY_MANAGER=uv`, `DEPENDENCY_MANAGER=pdm`, or `DEPENDENCY_MANAGER=micromamba` in `.env` to select the project dependency manager. If unset, projects with a root `notebooks/` directory use micromamba and other projects use uv.
 - bun is installed to execute npm tools by bunx
 - the selected manager syncs its root manifest directly into `.venv`; if that manifest is missing, it is initialized from `requirements.txt`. The other manager's manifest is generated through a temporary project.
 
@@ -83,3 +83,23 @@ this, because uv cannot manage a conda environment.
 
 Note that `notebooks/` is tracked once created, so a Binder visit can leave an
 untracked directory behind in a checkout.
+
+# tokens
+
+`.env` also holds `GITHUB_TOKEN`, a personal access token with which the
+scripts can manage the remote CI configuration. `git` ignores `.env`, and
+`.env.example` carries a placeholder instead of a real token, so copy that file
+and fill in the value:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+# continuous integration
+
+`.github/workflows/devcontainer.yml` runs `post-install.sh` and a one-shot
+synchronization on a GitHub runner for each dependency manager, then checks the
+generated manifest and badges. Use it instead of running the scripts locally
+when the network is unreliable: `gh workflow run devcontainer.yml`, or push
+under `.devcontainer/`, `binder/`, or `requirements*.txt`.
