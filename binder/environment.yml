@@ -1,0 +1,15 @@
+# Binder builds with a Miniconda image when it finds this file, and repo2docker
+# reads the Python version from here: without `python=x.y` it silently falls
+# back to its default. `python=3.12` is one of the versions repo2docker ships a
+# lock file for, and satisfies the `python-must` line of requirements.txt.
+# Keep the pip list in sync with requirements.txt and requirements-dev.txt:
+# repo2docker runs `mamba env update --file binder/environment.yml`, and a
+# relative `-r ../requirements.txt` is not resolved reliably from here.
+name: binder
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - jupyterlab
