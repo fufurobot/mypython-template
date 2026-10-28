@@ -284,11 +284,18 @@ build job derives it only because nothing else supplies a number.
 ## the devcontainer image
 
 `.devcontainer/Dockerfile` builds the development environment as a standalone
-image: it starts from the same base image as `devcontainer.json`, runs
-`post-install.sh` so uv, pdm, micromamba, and bun are already installed, and
-fails the build if any of them is not runnable. It is pushed to
-`ghcr.io/fufurobot/mypython-template` for `linux/amd64`, the only platform the
-base image is published for.
+image. It starts from mise's official Debian image,
+`ghcr.io/jdx/mise:debian`, which is published for `linux/amd64` and
+`linux/arm64` and already carries mise, curl, git, and CA certificates; the
+earlier Arch Linux base was published for `linux/amd64` alone. On top of it the
+Dockerfile creates the `vscode` user, runs `post-install.sh` so uv, pdm,
+micromamba, and bun are installed, and fails the build if any of them cannot
+run. It is pushed to `ghcr.io/fufurobot/mypython-template` for both platforms.
+
+`devcontainer.json` builds that Dockerfile rather than pulling the published
+image, so a fork works without depending on an image this repository pushes.
+The image also runs mise's directories from `/mise`, outside the home
+directory, so mounting `~` does not hide anything installed during the build.
 
 The workflow authenticates with the built-in `GITHUB_TOKEN`, whose
 `packages: write` permission comes from the job, so no token has to be stored

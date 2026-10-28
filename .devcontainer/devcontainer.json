@@ -1,6 +1,9 @@
 {
-  "name": "stupidinfer",
-  "image": "ghcr.io/bartventer/devcontainer-images/base-archlinux",
+  "name": "${localWorkspaceFolderBasename}",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
   "postCreateCommand": "bash .devcontainer/post-install.sh",
   "postStartCommand": "bash .devcontainer/watch-requirements.sh",
   "remoteEnv": {

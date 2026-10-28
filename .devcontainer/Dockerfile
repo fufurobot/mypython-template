@@ -1,50 +1,66 @@
 # The devcontainer as a standalone image.
 #
-# The image starts from the same base that devcontainer.json uses, then runs
-# post-install.sh so that uv, pdm, micromamba and bun are already present. A
-# codespace built from this image therefore skips their download, and the image
-# itself can be pulled where the installers cannot reach the network.
+# It builds on mise's official Debian image, which is published for linux/amd64
+# and linux/arm64 and already carries mise, curl, git and CA certificates. On
+# top of that it creates the devcontainer user and runs post-install.sh, so uv,
+# pdm, micromamba and bun are present. mise keeps its tools in /mise, outside
+# the home directory, so one installed there survives a mounted ~.
 #
 # Build:
 #   docker build -f .devcontainer/Dockerfile -t mypython-template .
-# The release workflow builds it for linux/amd64 and pushes it to the GitHub
+# The release workflow builds it for both platforms and pushes it to the GitHub
 # Container Registry.
 
-FROM ghcr.io/bartventer/devcontainer-images/base-archlinux:latest
+FROM ghcr.io/jdx/mise:debian
 
 USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# The installers need these, and the base image keeps them out of the non-root
-# user's reach.
-RUN pacman -Sy --noconfirm --needed curl tar bzip2 \
- && pacman -Scc --noconfirm
+# The base image is slim, so the packages the installers need come first.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates curl git tar bzip2 xz-utils sudo \
+ && rm -rf /var/lib/apt/lists/*
 
-# post-install.sh resolves $HOME, so it runs as the devcontainer user, with the
-# same PATH that devcontainer.json gives the container. The installers write
-# below ~/.local/share and ~/.bun as well as into ~/.local/bin, so the home
-# directory has to belong to the user: creating only ~/.local/bin left the rest
-# owned by root, and pdm then failed with
-# "Permission denied: '/home/vscode/.local/share'".
+# A devcontainer runs as a non-root user, and sudo keeps it able to install
+# packages the way the devcontainer spec expects.
+ARG USERNAME=vscode
+ARG USER_UID=1000
+ARG USER_GID=1000
+RUN groupadd --gid "$USER_GID" "$USERNAME" \
+ && useradd --uid "$USER_UID" --gid "$USER_GID" --create-home --shell /bin/bash "$USERNAME" \
+ && echo "$USERNAME ALL=(root) NOPASSWD:ALL" > "/etc/sudoers.d/$USERNAME" \
+ && chmod 0444 "/etc/sudoers.d/$USERNAME" \
+ && install -d -o "$USERNAME" -g "$USERNAME" "/home/$USERNAME/.local/bin"
+
+# post-install.sh resolves $HOME, so it runs as the devcontainer user with the
+# PATH that devcontainer.json gives the container. The installers write below
+# ~/.local/share and ~/.bun as well as into ~/.local/bin, hence the whole home
+# directory belongs to the user: handing over only ~/.local/bin made pdm fail
+# with "Permission denied: '/home/vscode/.local/share'".
 COPY --chown=vscode:vscode .devcontainer/post-install.sh /tmp/post-install.sh
-RUN chown -R vscode:vscode /home/vscode \
- && install -d -o vscode -g vscode /home/vscode/.local/bin \
- && su vscode -s /bin/bash -c \
-    'PATH="/home/vscode/.local/bin:$PATH" bash /tmp/post-install.sh' \
+RUN su "$USERNAME" -s /bin/bash -c \
+      'PATH="/home/vscode/.local/bin:$PATH" bash /tmp/post-install.sh' \
  && rm -f /tmp/post-install.sh
 
 # Fail the build rather than ship an image whose tools do not run.
-RUN su vscode -s /bin/bash -c \
-    'for tool in uv pdm micromamba bun; do \
-       command -v "$tool" >/dev/null || { echo "$tool is missing" >&2; exit 1; }; \
-     done'
+RUN su "$USERNAME" -s /bin/bash -c \
+      'for tool in mise uv pdm micromamba bun; do \
+         command -v "$tool" >/dev/null || { echo "$tool is missing" >&2; exit 1; }; \
+       done'
 
-ENV PATH="/home/vscode/.local/bin:${PATH}"
+# The base image keeps mise's data, config, and cache in /mise, outside the
+# home directory, so tools installed there survive a mounted ~. MISE_YES keeps
+# mise from asking for confirmation when a tool is first fetched.
+ENV PATH="/home/vscode/.local/bin:/mise/shims:${PATH}" \
+    MISE_DATA_DIR="/mise" \
+    MISE_CONFIG_DIR="/mise" \
+    MISE_CACHE_DIR="/mise/cache" \
+    MISE_YES="1"
+
 USER vscode
 WORKDIR /workspaces
 
-# Keep the default command of the base image, which the devcontainer spec
-# replaces anyway.
 LABEL org.opencontainers.image.title="mypython-template" \
       org.opencontainers.image.description="Python project template: uv, pdm, and micromamba" \
       org.opencontainers.image.source="https://github.com/fufurobot/mypython-template" \
