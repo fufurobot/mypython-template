@@ -14,8 +14,11 @@ inject_badges() {
   if [[ ! -f "$readme_file" ]]; then
     return 0
   fi
-  if [[ "$(grep -c -F -e "$badge_begin" -e "$badge_end" "$readme_file" || true)" != "2" ]]; then
-    printf 'Skipping badges: %s needs one %s and one %s line\n' \
+  # The markers may also be quoted elsewhere in the README, so the pair to fill
+  # is the first one, and a marker must be alone on its line to count.
+  if [[ "$(grep -c -x -F "$badge_begin" "$readme_file" || true)" == "0" ]] \
+    || [[ "$(grep -c -x -F "$badge_end" "$readme_file" || true)" == "0" ]]; then
+    printf 'Skipping badges: %s needs a %s and a %s line\n' \
       "$readme_file" "$badge_begin" "$badge_end" >&2
     return 0
   fi
