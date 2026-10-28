@@ -222,3 +222,48 @@ and only the `publish` job needs to be re-run:
 ```bash
 gh run rerun <run-id> --failed
 ```
+
+## what a release publishes
+
+`.github/workflows/release.yml` runs four jobs. `build` generates the package,
+and the other three fan out from it:
+
+| Job | Output | Needs |
+| --- | --- | --- |
+| `build` | wheel and sdist, kept as the `dist` artifact | — |
+| `publish` | the package on TestPyPI | `id-token: write` (OIDC) |
+| `image` | the devcontainer image, on the GitHub Container Registry | `packages: write` |
+| `release` | a GitHub release with the artifacts, on a `v*` tag | `contents: write` |
+
+A `workflow_dispatch` run does everything except the GitHub release, which is
+gated on a tag, so the workflow can be rehearsed without creating one.
+
+## the devcontainer image
+
+`.devcontainer/Dockerfile` builds the development environment as a standalone
+image: it starts from the same base image as `devcontainer.json`, runs
+`post-install.sh` so uv, pdm, micromamba, and bun are already installed, and
+fails the build if any of them is not runnable. It is pushed to
+`ghcr.io/fufurobot/mypython-template` for `linux/amd64` and `linux/arm64`.
+
+The workflow authenticates with the built-in `GITHUB_TOKEN`, whose
+`packages: write` permission comes from the job, so no token has to be stored
+for automation. `GITHUB_PACKAGES_TOKEN` in `.env` exists for pushing from a
+workstation, where that token is not available:
+
+```bash
+set -a && . ./.env && set +a
+echo "$GITHUB_PACKAGES_TOKEN" | docker login ghcr.io -u fufurobot --password-stdin
+docker build -f .devcontainer/Dockerfile -t ghcr.io/fufurobot/mypython-template:dev .
+docker push ghcr.io/fufurobot/mypython-template:dev
+```
+
+To develop inside the published image instead of building it, point
+`devcontainer.json` at it, keeping the mount of this repository:
+
+```json
+{ "image": "ghcr.io/fufurobot/mypython-template:latest" }
+```
+
+The image does not include the project: it carries the tools, and the
+workspace is mounted over `/workspaces` as usual.
