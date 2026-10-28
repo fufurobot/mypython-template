@@ -23,7 +23,10 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # A devcontainer runs as a non-root user, and sudo keeps it able to install
-# packages the way the devcontainer spec expects.
+# packages the way the devcontainer spec expects. The whole home directory is
+# handed to the user: creating only ~/.local/bin leaves ~/.local owned by root,
+# and pdm, which writes ~/.local/share, then fails with
+# "Permission denied: '/home/vscode/.local/share'".
 ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=1000
@@ -31,13 +34,11 @@ RUN groupadd --gid "$USER_GID" "$USERNAME" \
  && useradd --uid "$USER_UID" --gid "$USER_GID" --create-home --shell /bin/bash "$USERNAME" \
  && echo "$USERNAME ALL=(root) NOPASSWD:ALL" > "/etc/sudoers.d/$USERNAME" \
  && chmod 0444 "/etc/sudoers.d/$USERNAME" \
- && install -d -o "$USERNAME" -g "$USERNAME" "/home/$USERNAME/.local/bin"
+ && install -d -o "$USERNAME" -g "$USERNAME" "/home/$USERNAME/.local/bin" \
+ && chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
 
-# post-install.sh resolves $HOME, so it runs as the devcontainer user with the
-# PATH that devcontainer.json gives the container. The installers write below
-# ~/.local/share and ~/.bun as well as into ~/.local/bin, hence the whole home
-# directory belongs to the user: handing over only ~/.local/bin made pdm fail
-# with "Permission denied: '/home/vscode/.local/share'".
+# post-install.sh resolves $HOME, so it runs as the devcontainer user, with the
+# PATH that devcontainer.json gives the container.
 COPY --chown=vscode:vscode .devcontainer/post-install.sh /tmp/post-install.sh
 RUN su "$USERNAME" -s /bin/bash -c \
       'PATH="/home/vscode/.local/bin:$PATH" bash /tmp/post-install.sh' \
