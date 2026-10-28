@@ -7,6 +7,7 @@ requirements_file="$repo_root/requirements.txt"
 dev_requirements_file="$repo_root/requirements-dev.txt"
 pyproject_file="$repo_root/pyproject.toml"
 environment_file="$repo_root/environment.yml"
+python_version_file="$repo_root/.python-version"
 binder_environment_file="$repo_root/binder/environment.yml"
 env_file="$repo_root/.env"
 readme_file="$repo_root/README.md"
@@ -119,6 +120,35 @@ prepare_binder_workspace() {
     printf 'Binder workspace detected: created %s\n' "$repo_root/notebooks"
   fi
   printf 'Binder workspace detected: using the conda environment provided by Binder\n'
+}
+
+# write_python_version: materializes python-must as .python-version, the file
+# that uv, pdm and asdf read. Only a concrete version can be written, so a
+# constraint such as ">=3.10" becomes its lower bound.
+write_python_version() {
+  local constraint version
+  constraint="$(read_python_constraint)"
+  if [[ -z "$constraint" ]]; then
+    return 0
+  fi
+
+  # ">=3.12,<3.14" names its lower bound, "==3.11.*" its series, and a
+  # trailing comment is not part of the version.
+  constraint="${constraint%%#*}"
+  version="$(sed -E 's/^[[:space:]]*[<>=!~^]+//; s/[<>=!~^]//g; s/[[:space:]]+//g' <<<"$constraint")"
+  version="${version%%,*}"
+  # "3.11.*" names the 3.11 series; any other trailing part is a real version.
+  version="${version%.\*}"
+  if [[ ! "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+    printf 'Skipping %s: python-must "%s" does not name a version\n' \
+      "$python_version_file" "$constraint" >&2
+    return 0
+  fi
+  if [[ -f "$python_version_file" && "$(cat "$python_version_file")" == "$version" ]]; then
+    return 0
+  fi
+  printf '%s\n' "$version" > "$python_version_file"
+  printf 'Wrote %s with Python %s\n' "$python_version_file" "$version"
 }
 
 load_dependency_manager() {
@@ -403,6 +433,7 @@ update_badges() {
 sync_project() {
   local manager
   prepare_binder_workspace
+  write_python_version
   manager="$(load_dependency_manager)"
   printf 'Using %s for %s\n' "$manager" "$repo_root"
 
@@ -426,7 +457,7 @@ input_hash() {
   {
     printf '%s\n' "$manager"
     for file in "$env_file" "$pyproject_file" "$environment_file" \
-      "$requirements_file" "$dev_requirements_file" "$readme_file"; do
+      "$requirements_file" "$dev_requirements_file" "$python_version_file" "$readme_file"; do
       [[ ! -f "$file" ]] || sha256sum "$file"
     done
   } | sha256sum | awk '{print $1}'
