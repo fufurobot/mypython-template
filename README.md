@@ -140,4 +140,23 @@ gh workflow run release.yml
 ```
 
 TestPyPI refuses a version that already exists, so every publish needs a new
-one.
+one. A tag only triggers the workflow: it does not set the version. The version
+is whatever `uv init` wrote into the generated `pyproject.toml`, so bumping it
+between publishes is what makes each run uploadable.
+
+## attestations
+
+The publish step runs with `attestations: false`. Publish API attestations are
+signed through [Sigstore](https://www.sigstore.dev/)'s transparency log, Rekor,
+and Rekor answered `502 Bad Gateway` to this repository's runners while being
+healthy elsewhere, which failed the publish before any upload started. Nothing
+about publishing to TestPyPI depends on them. Re-enable attestations, by
+dropping that line, when publishing to PyPI proper, and check that the failure
+is gone first:
+
+```text
+sigstore._internal.rekor.RekorClientError: Rekor returned an unknown error with HTTP 502
+```
+
+The build job runs regardless, so a publish failure never loses the artifacts:
+they are uploaded as the `dist` artifact of the run.
